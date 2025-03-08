@@ -201,8 +201,9 @@ function cosineSimilarity(vecA: number[], vecB: number[]): number {
 }
 
 /**
- * Search for customers using vector similarity
+ * Search for customers using vector similarity or direct ID lookup
  * This function takes a query, converts it to an embedding, and finds similar customers
+ * It also handles direct customer ID lookups for more accurate results
  */
 export async function searchSimilarCustomers(query: string, limit: number = 3): Promise<Customer[]> {
   try {
@@ -225,8 +226,22 @@ export async function searchSimilarCustomers(query: string, limit: number = 3): 
       
       if (exactCustomer) {
         console.log(`Found exact match for customer ID: ${customerId}`);
+        // Log the actual product count to help with debugging
+        console.log(`Customer ${customerId} has ${exactCustomer.products.length} products`);
         return [exactCustomer];
       }
+    }
+    
+    // Also check for customer names in the query (first name + last name)
+    const allCustomers = customerData as Customer[];
+    const potentialNameMatches = allCustomers.filter(customer => {
+      const fullName = `${customer.firstName} ${customer.lastName}`.toLowerCase();
+      return query.toLowerCase().includes(fullName);
+    });
+    
+    if (potentialNameMatches.length > 0) {
+      console.log(`Found ${potentialNameMatches.length} customers by name match`);
+      return potentialNameMatches.slice(0, limit);
     }
     
     // Continue with vector search if no exact match was found
@@ -268,7 +283,12 @@ export async function searchSimilarCustomers(query: string, limit: number = 3): 
     
     // Get the full customer data for the top results
     const customers = topResults.map((result: any) => {
-      return customerData.find((c: any) => c.customerId === result.customerId) as Customer;
+      const customer = customerData.find((c: any) => c.customerId === result.customerId) as Customer;
+      if (customer) {
+        // Log the actual product count to help with debugging
+        console.log(`Customer ${customer.customerId} has ${customer.products.length} products`);
+      }
+      return customer;
     }).filter(Boolean);
     
     console.log(`Found ${customers.length} customers using vector search`);

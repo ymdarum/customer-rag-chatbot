@@ -133,9 +133,13 @@ Use the following customer information to answer the user's question.
 Only use information provided in the context below. If you don't know 
 the answer based on the provided context, say so politely.
 
-When counting products, be accurate and count the actual number of products listed.
-If a customer has no products, their "Products:" field will be empty.
-Be precise when reporting numbers and facts about customers.
+IMPORTANT INSTRUCTIONS FOR PRODUCT INFORMATION:
+1. Be extremely precise when counting products for each customer.
+2. A customer with "products": [] has ZERO products, not any other number.
+3. Do not confuse transactions with products - they are different.
+4. Never make up or hallucinate product information.
+5. If you're unsure about the number of products, explicitly state what you see in the data.
+6. Double-check your counts before providing an answer.
 
 Customer information:
 ${context}`;
@@ -147,7 +151,7 @@ ${context}`;
 
   try {
     return await getChatResponse(messages, {
-      temperature: 0.5,
+      temperature: 0.3, // Lower temperature for more factual responses
     });
   } catch (error) {
     console.error("RAG response error:", error);
