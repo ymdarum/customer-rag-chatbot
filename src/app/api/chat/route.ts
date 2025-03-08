@@ -5,30 +5,9 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { searchSimilarCustomers } from "@/lib/vectorDb";
 import { generateRagResponse } from "@/lib/ollama";
-
-// Define Customer interface instead of importing it
-interface Customer {
-  id: number;
-  customerId: string;
-  firstName: string;
-  lastName: string;
-  email: string;
-  phoneNumber: string;
-  address: {
-    street: string;
-    city: string;
-    state: string;
-    zipCode: string;
-  };
-  dateOfBirth?: string;
-  joinDate?: string;
-  customerRating?: number;
-  products: any[];
-  recentTransactions?: any[];
-  notes?: string;
-}
+import { searchSimilarCustomers } from "@/lib/vectorDb";
+import { Customer } from "@/types";
 
 // Rate limiting: store client IPs and their request timestamps
 const rateLimitMap = new Map<string, number[]>();
@@ -47,25 +26,26 @@ export async function POST(req: NextRequest) {
   const startTime = Date.now();
   
   try {
-    // Get the request body
+    // Get the request data
     const requestData = await req.json();
     
-    // Handle different request formats
+    // Handle both new format (messages array) and old format (query string)
+    // This ensures backward compatibility with existing frontend code
     let userMessage: string;
     
-    // Check which format the request is using
     if (requestData.messages && Array.isArray(requestData.messages) && requestData.messages.length > 0) {
-      // Format: { messages: [{ role: "user", content: "message" }, ...] }
+      // New format with messages array
       userMessage = requestData.messages[requestData.messages.length - 1].content;
-    } else if (requestData.query && typeof requestData.query === 'string') {
-      // Format: { query: "message" }
+      console.log("Using new messages format");
+    } else if (requestData.query) {
+      // Old format with direct query string
       userMessage = requestData.query;
+      console.log("Using old query format");
     } else {
-      // Invalid request format
-      throw new Error("Invalid request format. Expected either 'messages' array or 'query' string.");
+      // No valid query format found
+      throw new Error("No valid query format in request. Expected 'messages' array or 'query' string.");
     }
     
-    // Log the extracted query
     console.log("User query:", userMessage);
     
     // Define patterns to detect comprehensive search requests
@@ -183,7 +163,7 @@ export async function POST(req: NextRequest) {
   } catch (error) {
     console.error("Error in chat route:", error);
     return NextResponse.json(
-      { error: "Failed to process your request: " + (error as Error).message },
+      { error: "Failed to process your request" },
       { status: 500 }
     );
   }
