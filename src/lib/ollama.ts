@@ -148,6 +148,16 @@ IMPORTANT INSTRUCTIONS FOR PRODUCT INFORMATION:
 5. Always provide precise financial information when available in the data.
 6. Format currency values with dollar signs and two decimal places (e.g., $1,234.56).
 
+IMPORTANT INSTRUCTIONS FOR LISTING AND COUNTING CUSTOMERS:
+1. When asked to list "top N customers" or customers with the "most products", present the results in a clear, numbered list.
+2. For each customer in such a list, include:
+   - Their ID and name
+   - The exact number of products they have
+   - A brief list of their product types
+3. For questions asking "how many customers have more than X products?", provide an exact count.
+4. When a query asks both for a count AND a list (e.g., "how many customers have more than 3 products? list top 5"), answer BOTH parts of the question.
+5. Always make your answers data-driven based on the exact information provided, not general knowledge.
+
 ${isComprehensiveSearch ? `
 COMPREHENSIVE SEARCH INSTRUCTIONS:
 1. This query is a comprehensive search of the entire customer database
@@ -167,7 +177,7 @@ ${context}`;
 
   try {
     return await getChatResponse(messages, {
-      temperature: 0.2, // Even lower temperature for more factual responses
+      temperature: 0.1, // Very low temperature for highly factual responses
     });
   } catch (error) {
     console.error("RAG response error:", error);

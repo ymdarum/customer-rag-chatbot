@@ -220,9 +220,39 @@ export async function searchSimilarCustomers(query: string, limit: number = 3): 
       const allCustomers = customerData as Customer[];
       console.log(`Total customers in database: ${allCustomers.length}`);
       
-      // Special handling for queries about product counts
+      // Check for queries asking about "top N customers" or sorting by product count
+      const topNPattern = /top\s+(\d+)\s+customers?|(\d+)\s+customers?\s+with\s+(most|highest|greatest)/i;
+      const listTopNMatch = query.toLowerCase().match(topNPattern);
+      
+      // Special handling for queries about product counts and top customers
       if (query.toLowerCase().includes("product")) {
         console.log("Detected product-related query, analyzing product counts directly");
+        
+        // Add product count to each customer for easier sorting
+        const customersWithProductCount = allCustomers.map(customer => ({
+          customer,
+          productCount: customer.products ? customer.products.length : 0
+        }));
+        
+        // Sort customers by product count (highest first)
+        const sortedCustomers = customersWithProductCount.sort((a, b) => 
+          b.productCount - a.productCount
+        );
+        
+        // If query is about top N customers with most products
+        if (listTopNMatch) {
+          // Extract N from "top N" or default to 5
+          const topN = parseInt(listTopNMatch[1] || listTopNMatch[2] || "5");
+          console.log(`Query is asking for top ${topN} customers by product count`);
+          
+          // Get top N customers with most products
+          const topCustomers = sortedCustomers
+            .slice(0, topN)
+            .map(c => c.customer);
+          
+          console.log(`Returning top ${topCustomers.length} customers by product count`);
+          return topCustomers;
+        }
         
         // If query is about customers with more than X products
         if (query.toLowerCase().includes("more than") && query.toLowerCase().includes("product")) {
@@ -231,27 +261,37 @@ export async function searchSimilarCustomers(query: string, limit: number = 3): 
           const threshold = numberMatch ? parseInt(numberMatch[1]) : 3; // Default to 3 if not specified
           
           console.log(`Filtering customers with more than ${threshold} products`);
-          const filteredCustomers = allCustomers.filter(c => 
-            (c.products && c.products.length > threshold)
-          );
+          const filteredCustomers = sortedCustomers
+            .filter(c => c.productCount > threshold)
+            .map(c => c.customer);
           
           // Log counts for all product ranges to help with debugging
           const productCounts = {
-            "0 products": allCustomers.filter(c => !c.products || c.products.length === 0).length,
-            "1-3 products": allCustomers.filter(c => c.products && c.products.length > 0 && c.products.length <= 3).length,
-            "4+ products": allCustomers.filter(c => c.products && c.products.length > 3).length,
+            "0 products": customersWithProductCount.filter(c => c.productCount === 0).length,
+            "1-3 products": customersWithProductCount.filter(c => c.productCount > 0 && c.productCount <= 3).length,
+            "4+ products": customersWithProductCount.filter(c => c.productCount > 3).length,
             [`>${threshold} products`]: filteredCustomers.length
           };
           
           console.log("Product count distribution:", productCounts);
           console.log(`Found ${filteredCustomers.length} customers with more than ${threshold} products`);
           
+          // If the query also asks for top customers, limit the results accordingly
+          if (query.toLowerCase().includes("top") || query.toLowerCase().includes("most")) {
+            const limitN = Math.min(filteredCustomers.length, limit);
+            console.log(`Limiting results to top ${limitN} customers by product count`);
+            return filteredCustomers.slice(0, limitN);
+          }
+          
           // Return the customers that match the criteria, up to the limit
           return filteredCustomers.slice(0, limit);
         }
         
-        // For other product-related queries, just return all customers
-        return allCustomers.slice(0, limit);
+        // For other product-related queries, return top customers by product count
+        // This handles general questions about products
+        const topCount = Math.min(sortedCustomers.length, limit);
+        console.log(`Returning top ${topCount} customers by product count for general product query`);
+        return sortedCustomers.slice(0, topCount).map(c => c.customer);
       }
     }
     
