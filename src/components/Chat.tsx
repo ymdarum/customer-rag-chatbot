@@ -11,6 +11,7 @@ import { Separator } from '@/components/ui/separator';
 type Message = {
   role: 'user' | 'assistant';
   content: string;
+  processingTime?: number; // Add processing time to message type
 };
 
 type CustomerMatch = {
@@ -67,10 +68,11 @@ export default function Chat() {
       
       const data = await response.json();
       
-      // Add assistant message to chat
+      // Add assistant message to chat with processing time
       const assistantMessage: Message = {
         role: 'assistant',
         content: data.response,
+        processingTime: data.processingTime, // Store processing time from API response
       };
       
       setMessages((prev) => [...prev, assistantMessage]);
@@ -149,6 +151,11 @@ export default function Chat() {
                     }`}
                   >
                     {message.content}
+                    {message.processingTime && (
+                      <div className="text-xs text-muted-foreground mt-1 text-right">
+                        Processed in {message.processingTime}ms
+                      </div>
+                    )}
                   </div>
                   {message.role === 'user' && (
                     <Avatar className="h-8 w-8 bg-blue-600">

@@ -19,6 +19,9 @@ const ONE_MINUTE = 60 * 1000;
  */
 export async function POST(request: NextRequest) {
   try {
+    // Start timing the request processing
+    const startTime = performance.now();
+    
     // Rate limiting check
     const clientIp = request.headers.get('x-forwarded-for') || 'unknown';
     const now = Date.now();
@@ -93,12 +96,17 @@ Additional Notes: ${customer.notes || 'No additional notes'}
     // Step 3: Generate a response using the RAG approach with Ollama
     const response = await generateRagResponse(query, context);
     
+    // Calculate the total processing time in milliseconds
+    const endTime = performance.now();
+    const processingTime = Math.round(endTime - startTime);
+    
     return NextResponse.json({
       response,
       matchedCustomers: customers.map(c => ({
         id: c.customerId,
         name: `${c.firstName} ${c.lastName}`,
       })),
+      processingTime, // Add processing time to the response
     });
   } catch (error) {
     console.error('Error in chat API:', error);
