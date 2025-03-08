@@ -111,10 +111,47 @@ export async function POST(request: NextRequest) {
     
     if (customers.length > 0) {
       context = customers.map(customer => {
-        // Format the products section with explicit count and clear formatting
+        // Format the products section with explicit count and detailed product information including balances
         let productsSection = '';
         if (customer.products && customer.products.length > 0) {
-          productsSection = `PRODUCTS (${customer.products.length}): ${customer.products.map(p => p.type).join(", ")}`;
+          // Create a header for the products section
+          productsSection = `PRODUCTS (${customer.products.length}):\n`;
+          
+          // Add detailed information for each product including balance and other details
+          customer.products.forEach((product, index) => {
+            productsSection += `  ${index + 1}. ${product.type}`;
+            
+            // Add account/card number if available
+            if (product.accountNumber) {
+              productsSection += ` (${product.accountNumber})`;
+            } else if (product.cardNumber) {
+              productsSection += ` (${product.cardNumber})`;
+            } else if (product.loanNumber) {
+              productsSection += ` (${product.loanNumber})`;
+            }
+            
+            // Add balance information based on product type
+            if (product.balance !== undefined) {
+              productsSection += ` - Balance: $${product.balance.toFixed(2)}`;
+            } else if (product.currentBalance !== undefined) {
+              productsSection += ` - Current Balance: $${product.currentBalance.toFixed(2)}`;
+              if (product.creditLimit !== undefined) {
+                productsSection += `, Credit Limit: $${product.creditLimit.toFixed(2)}`;
+              }
+            } else if (product.outstandingBalance !== undefined) {
+              productsSection += ` - Outstanding Balance: $${product.outstandingBalance.toFixed(2)}`;
+              if (product.originalAmount !== undefined) {
+                productsSection += `, Original Amount: $${product.originalAmount.toFixed(2)}`;
+              }
+            }
+            
+            // Add interest rate if available
+            if (product.interestRate !== undefined) {
+              productsSection += `, Interest Rate: ${product.interestRate}%`;
+            }
+            
+            productsSection += '\n';
+          });
         } else {
           productsSection = `PRODUCTS (0): Customer has NO products`;
         }
@@ -133,8 +170,7 @@ Name: ${customer.firstName} ${customer.lastName}
 Email: ${customer.email}
 Phone: ${customer.phoneNumber}
 Address: ${customer.address.street}, ${customer.address.city}, ${customer.address.state} ${customer.address.zipCode}
-${productsSection}
-${transactionsSection}
+${productsSection}${transactionsSection}
 Customer Rating: ${customer.customerRating || 'Not rated'}
 Join Date: ${customer.joinDate || 'Unknown'}
 Additional Notes: ${customer.notes || 'No additional notes'}

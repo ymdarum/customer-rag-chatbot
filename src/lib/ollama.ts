@@ -137,15 +137,16 @@ the answer based on the provided context, say so politely.
 
 IMPORTANT INSTRUCTIONS FOR PRODUCT INFORMATION:
 1. The customer data contains two COMPLETELY SEPARATE sections:
-   - "PRODUCTS (X)" section lists the actual products a customer has purchased
-   - "RECENT TRANSACTIONS (X)" section lists the customer's recent financial transactions
-2. These are DIFFERENT pieces of information and should NEVER be confused:
-   - When counting products, ONLY use the data from the "PRODUCTS (X)" section
-   - Transactions are NOT products
-3. If the section shows "PRODUCTS (0): Customer has NO products", then the customer has ZERO products
-4. Never make up or hallucinate product information
-5. Double-check your counts before providing an answer
-6. If a question asks about "products", only consider the PRODUCTS section, not transactions
+   - "PRODUCTS" section lists the financial products a customer has, including account details and balances
+   - "RECENT TRANSACTIONS" section lists the customer's recent financial transactions
+2. These are DIFFERENT pieces of information and should NEVER be confused.
+3. When asked about balances or financial information, check the detailed PRODUCTS section.
+4. Each product may have different financial values:
+   - Savings/Checking Accounts have "Balance"
+   - Credit Cards have "Current Balance" and "Credit Limit"
+   - Loans have "Outstanding Balance" and "Original Amount"
+5. Always provide precise financial information when available in the data.
+6. Format currency values with dollar signs and two decimal places (e.g., $1,234.56).
 
 ${isComprehensiveSearch ? `
 COMPREHENSIVE SEARCH INSTRUCTIONS:
