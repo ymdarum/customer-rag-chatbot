@@ -98,7 +98,10 @@ Additional Notes: ${customer.notes || 'No additional notes'}
     
     // Calculate the total processing time in milliseconds
     const endTime = performance.now();
-    const processingTime = Math.round(endTime - startTime);
+    const processingTimeMs = Math.round(endTime - startTime);
+    
+    // Convert milliseconds to seconds with 2 decimal places
+    const processingTime = (processingTimeMs / 1000).toFixed(2);
     
     return NextResponse.json({
       response,
@@ -106,7 +109,7 @@ Additional Notes: ${customer.notes || 'No additional notes'}
         id: c.customerId,
         name: `${c.firstName} ${c.lastName}`,
       })),
-      processingTime, // Add processing time to the response
+      processingTime, // Processing time in seconds
     });
   } catch (error) {
     console.error('Error in chat API:', error);
