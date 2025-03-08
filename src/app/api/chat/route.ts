@@ -7,7 +7,28 @@
 import { NextRequest, NextResponse } from "next/server";
 import { searchSimilarCustomers } from "@/lib/vectorDb";
 import { generateRagResponse } from "@/lib/ollama";
-import { Customer } from "@/types";
+
+// Define Customer interface instead of importing it
+interface Customer {
+  id: number;
+  customerId: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  phoneNumber: string;
+  address: {
+    street: string;
+    city: string;
+    state: string;
+    zipCode: string;
+  };
+  dateOfBirth?: string;
+  joinDate?: string;
+  customerRating?: number;
+  products: any[];
+  recentTransactions?: any[];
+  notes?: string;
+}
 
 // Rate limiting: store client IPs and their request timestamps
 const rateLimitMap = new Map<string, number[]>();
@@ -26,10 +47,25 @@ export async function POST(req: NextRequest) {
   const startTime = Date.now();
   
   try {
-    // Get the user's message from the request
-    const { messages } = await req.json();
-    const userMessage = messages[messages.length - 1].content;
+    // Get the request body
+    const requestData = await req.json();
     
+    // Handle different request formats
+    let userMessage: string;
+    
+    // Check which format the request is using
+    if (requestData.messages && Array.isArray(requestData.messages) && requestData.messages.length > 0) {
+      // Format: { messages: [{ role: "user", content: "message" }, ...] }
+      userMessage = requestData.messages[requestData.messages.length - 1].content;
+    } else if (requestData.query && typeof requestData.query === 'string') {
+      // Format: { query: "message" }
+      userMessage = requestData.query;
+    } else {
+      // Invalid request format
+      throw new Error("Invalid request format. Expected either 'messages' array or 'query' string.");
+    }
+    
+    // Log the extracted query
     console.log("User query:", userMessage);
     
     // Define patterns to detect comprehensive search requests
@@ -147,7 +183,7 @@ export async function POST(req: NextRequest) {
   } catch (error) {
     console.error("Error in chat route:", error);
     return NextResponse.json(
-      { error: "Failed to process your request" },
+      { error: "Failed to process your request: " + (error as Error).message },
       { status: 500 }
     );
   }
