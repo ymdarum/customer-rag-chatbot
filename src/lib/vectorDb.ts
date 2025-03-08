@@ -202,15 +202,48 @@ function cosineSimilarity(vecA: number[], vecB: number[]): number {
 
 /**
  * Search for customers using vector similarity or direct ID lookup
- * This function takes a query, converts it to an embedding, and finds similar customers
- * It also handles direct customer ID lookups for more accurate results
+ * For comprehensive searches (high limit), use more efficient approach
  */
 export async function searchSimilarCustomers(query: string, limit: number = 3): Promise<Customer[]> {
   try {
     await initVectorDb();
     
-    console.log(`Searching for customers similar to query: "${query}"`);
+    console.log(`Searching for customers similar to query: "${query}" with limit: ${limit}`);
     
+    // For comprehensive searches (high limit), use a more efficient approach
+    const isComprehensiveSearch = limit > 50;
+    
+    if (isComprehensiveSearch) {
+      console.log("Performing comprehensive search of all customers");
+      // For comprehensive queries about products, scan the full database more efficiently
+      if (query.toLowerCase().includes("product")) {
+        // Get all customers and analyze their products directly
+        const allCustomers = customerData as Customer[];
+        
+        // Log the total customer count
+        console.log(`Analyzing all ${allCustomers.length} customers for product information`);
+        
+        // Filter customers based on product counts if that's what's being asked
+        if (query.toLowerCase().includes("more than") && query.toLowerCase().includes("product")) {
+          // Extract the number from "more than X products"
+          const numberMatch = query.match(/more than (\d+)/i);
+          const threshold = numberMatch ? parseInt(numberMatch[1]) : 3; // Default to 3 if not specified
+          
+          console.log(`Filtering customers with more than ${threshold} products`);
+          const filteredCustomers = allCustomers.filter(c => 
+            (c.products && c.products.length > threshold)
+          );
+          
+          console.log(`Found ${filteredCustomers.length} customers with more than ${threshold} products`);
+          return filteredCustomers;
+        }
+        
+        // Return all customers for other product-related queries
+        return allCustomers.slice(0, limit);
+      }
+    }
+    
+    // Continue with the regular search logic for non-comprehensive searches
     // Check if the query contains a specific customer ID pattern (CUST-XXXXX)
     const customerIdMatch = query.match(/CUST-\d{5,6}/i);
     

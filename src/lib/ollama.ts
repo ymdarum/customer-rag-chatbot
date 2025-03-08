@@ -122,11 +122,13 @@ export async function getChatResponse(
  * Generate a RAG response using context and Ollama
  * @param userQuery - The user's question
  * @param context - Relevant context for the query
+ * @param isComprehensiveSearch - Whether this query is a comprehensive database search
  * @returns The assistant's response with context-enhanced knowledge
  */
 export async function generateRagResponse(
   userQuery: string,
-  context: string
+  context: string,
+  isComprehensiveSearch: boolean = false
 ): Promise<string> {
   const systemPrompt = `You are a helpful customer service assistant. 
 Use the following customer information to answer the user's question.
@@ -144,6 +146,15 @@ IMPORTANT INSTRUCTIONS FOR PRODUCT INFORMATION:
 4. Never make up or hallucinate product information
 5. Double-check your counts before providing an answer
 6. If a question asks about "products", only consider the PRODUCTS section, not transactions
+
+${isComprehensiveSearch ? `
+COMPREHENSIVE SEARCH INSTRUCTIONS:
+1. This query is a comprehensive search of the entire customer database
+2. Analyze ALL customers provided in the context, not just a few examples
+3. Provide a thorough and accurate answer based on ALL the customer data
+4. If counting or summarizing data, make sure to include ALL customers
+5. Be explicit about how many total customers were examined
+` : ''}
 
 Customer information:
 ${context}`;

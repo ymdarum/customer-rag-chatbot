@@ -67,9 +67,24 @@ export async function POST(request: NextRequest) {
     
     console.log(`Chat API received query: "${query}"`);
     
+    // Analyze the query to determine if we should search the entire database
+    // Look for phrases indicating a comprehensive search request
+    const searchWholeDatabase = /search.*(whole|entire|all|complete|full).*database|all.*customers|every.*customer/i.test(query);
+    
+    // Set the search limit based on the query analysis
+    // Use a high limit (effectively no limit) if the user wants to search the whole database
+    const searchLimit = searchWholeDatabase ? 1000 : 3;
+    console.log(`Search mode: ${searchWholeDatabase ? 'comprehensive search' : 'limited search'} with limit: ${searchLimit}`);
+    
     // Step 1: Retrieve relevant customer data using vector database search
     // This is much faster now since embeddings are pre-computed and stored
-    const customers = await searchSimilarCustomers(query, 3);
+    const customers = await searchSimilarCustomers(query, searchLimit);
+    
+    // For comprehensive searches, add a note about how many customers were actually found
+    let comprehensiveSearchNote = '';
+    if (searchWholeDatabase) {
+      comprehensiveSearchNote = `\n\nNote: This response is based on a comprehensive search of all ${customers.length} matching customers in the database.`;
+    }
     
     // Step 2: Format customer information as context for the RAG system
     let context = '';
@@ -110,10 +125,15 @@ Additional Notes: ${customer.notes || 'No additional notes'}
     }
     
     // Step 3: Generate a response using the RAG approach with Ollama
-    const response = await generateRagResponse(query, context);
+    const response = await generateRagResponse(query, context, searchWholeDatabase);
     
     // Step 4: Validate the response for common hallucinations about products
     let validatedResponse = response;
+    
+    // Add the comprehensive search note to the response if applicable
+    if (searchWholeDatabase && comprehensiveSearchNote) {
+      validatedResponse = validatedResponse + comprehensiveSearchNote;
+    }
     
     // Check for potential hallucinations about product counts
     if (response.toLowerCase().includes('product') && customers.length > 0) {
