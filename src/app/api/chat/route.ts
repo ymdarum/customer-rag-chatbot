@@ -5,165 +5,246 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { generateRagResponse } from "@/lib/ollama";
 import { searchSimilarCustomers } from "@/lib/vectorDb";
-import { Customer } from "@/types";
+import { generateRagResponse } from "@/lib/ollama";
 
 // Rate limiting: store client IPs and their request timestamps
 const rateLimitMap = new Map<string, number[]>();
 const MAX_REQUESTS_PER_MINUTE = 10;
 const ONE_MINUTE = 60 * 1000;
 
-export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
-
 /**
  * POST handler for chat API
  * Implements RAG (Retrieval Augmented Generation) with persistent vector database
  */
-export async function POST(req: NextRequest) {
-  console.log("Chat API route called");
-  const startTime = Date.now();
-  
+export async function POST(request: NextRequest) {
   try {
-    // Get the request data
-    const requestData = await req.json();
+    // Start timing the request processing
+    const startTime = performance.now();
     
-    // Handle both new format (messages array) and old format (query string)
-    // This ensures backward compatibility with existing frontend code
-    let userMessage: string;
+    // Rate limiting check
+    const clientIp = request.headers.get('x-forwarded-for') || 'unknown';
+    const now = Date.now();
     
-    if (requestData.messages && Array.isArray(requestData.messages) && requestData.messages.length > 0) {
-      // New format with messages array
-      userMessage = requestData.messages[requestData.messages.length - 1].content;
-      console.log("Using new messages format");
-    } else if (requestData.query) {
-      // Old format with direct query string
-      userMessage = requestData.query;
-      console.log("Using old query format");
+    if (rateLimitMap.has(clientIp)) {
+      const timestamps = rateLimitMap.get(clientIp) || [];
+      // Filter out timestamps older than 1 minute
+      const recentTimestamps = timestamps.filter(ts => now - ts < ONE_MINUTE);
+      
+      if (recentTimestamps.length >= MAX_REQUESTS_PER_MINUTE) {
+        return NextResponse.json(
+          { error: 'Too many requests. Please try again later.' },
+          { status: 429 }
+        );
+      }
+      
+      rateLimitMap.set(clientIp, [...recentTimestamps, now]);
     } else {
-      // No valid query format found
-      throw new Error("No valid query format in request. Expected 'messages' array or 'query' string.");
+      rateLimitMap.set(clientIp, [now]);
     }
     
-    console.log("User query:", userMessage);
+    // Clean up old entries in the rate limit map
+    if (rateLimitMap.size > 1000) {
+      for (const [ip, timestamps] of rateLimitMap.entries()) {
+        const recentTimestamps = timestamps.filter(ts => now - ts < ONE_MINUTE);
+        if (recentTimestamps.length === 0) {
+          rateLimitMap.delete(ip);
+        } else {
+          rateLimitMap.set(ip, recentTimestamps);
+        }
+      }
+    }
     
-    // Define patterns to detect comprehensive search requests
+    // Parse the request body
+    const { query } = await request.json();
+    
+    if (!query || query.trim() === '') {
+      return NextResponse.json(
+        { error: 'Query parameter is required' },
+        { status: 400 }
+      );
+    }
+    
+    console.log(`Chat API received query: "${query}"`);
+    
+    // Analyze the query to determine if we should search the entire database
+    // Check for multiple patterns that would indicate a comprehensive search:
+    // 1. Explicit requests to search the entire database
+    // 2. Questions about counting or "how many" across all customers
+    // 3. Questions comparing customers based on criteria
     const comprehensiveSearchPatterns = [
-      /how many customers/i,               // Counting questions
-      /customers? with more than/i,         // Filtering by threshold
-      /list top \d+ customers?/i,           // Listing top N customers
-      /top \d+ customers? with/i,           // Another top N pattern
-      /most products?/i,                    // Questions about most products
-      /all customers?/i,                    // Explicit all customers requests
-      /count/i                              // General counting requests
+      // Explicit requests for full database search
+      /search.*(whole|entire|all|complete|full).*database/i,
+      /(all|every).*customers?/i,
+      
+      // Count or statistics questions
+      /how many customers?/i,
+      /count.*customers?/i,
+      /number of customers?/i,
+      
+      // Questions about criteria across all customers
+      /customers?.*(with|having|more than)/i,
+      /which customers?/i,
+      /find.*customers?/i
     ];
     
-    // Check if this is a comprehensive search query
-    const isComprehensiveSearch = comprehensiveSearchPatterns.some(pattern => 
-      pattern.test(userMessage)
-    );
+    // Check if any of the patterns match the query
+    const searchWholeDatabase = comprehensiveSearchPatterns.some(pattern => pattern.test(query));
     
-    console.log(`Comprehensive search: ${isComprehensiveSearch}`);
+    // Set the search limit based on the query analysis
+    // Use a high limit (effectively no limit) if the comprehensive search is needed
+    const searchLimit = searchWholeDatabase ? 1000 : 3;
+    console.log(`Search mode: ${searchWholeDatabase ? 'comprehensive search' : 'limited search'} with limit: ${searchLimit}`);
     
-    // Set search limit based on query type
-    const searchLimit = isComprehensiveSearch ? 1000 : 3;
+    // Step 1: Retrieve relevant customer data using vector database search
+    // This is much faster now since embeddings are pre-computed and stored
+    const customers = await searchSimilarCustomers(query, searchLimit);
     
-    // Search for similar customers
-    const searchResults = await searchSimilarCustomers(userMessage, searchLimit);
-    
-    console.log(`Found ${searchResults.length} customers relevant to query`);
-    
-    // Format customer data for context
-    const formattedCustomers = searchResults.map(customer => {
-      // Basic customer info
-      let customerInfo = `CUSTOMER ID: ${customer.customerId}\n`;
-      customerInfo += `NAME: ${customer.firstName} ${customer.lastName}\n`;
-      customerInfo += `EMAIL: ${customer.email}\n`;
-      customerInfo += `PHONE: ${customer.phoneNumber}\n`;
-      customerInfo += `ADDRESS: ${customer.address.street}, ${customer.address.city}, ${customer.address.state} ${customer.address.zipCode}\n`;
-      customerInfo += `CUSTOMER RATING: ${customer.customerRating}/5\n\n`;
-      
-      // Product information
-      customerInfo += "PRODUCTS:\n";
-      if (customer.products && customer.products.length > 0) {
-        customer.products.forEach(product => {
-          customerInfo += `- ${product.type} (${product.accountNumber})\n`;
-          
-          // Include specific financial details based on product type
-          if ('balance' in product) {
-            customerInfo += `  Balance: $${product.balance.toFixed(2)}\n`;
-          }
-          if ('interestRate' in product) {
-            customerInfo += `  Interest Rate: ${product.interestRate}%\n`;
-          }
-          if ('creditLimit' in product) {
-            customerInfo += `  Credit Limit: $${product.creditLimit.toFixed(2)}\n`;
-          }
-          if ('outstandingBalance' in product) {
-            customerInfo += `  Outstanding Balance: $${product.outstandingBalance.toFixed(2)}\n`;
-          }
-          if ('originalAmount' in product) {
-            customerInfo += `  Original Amount: $${product.originalAmount.toFixed(2)}\n`;
-          }
-          if ('currentBalance' in product) {
-            customerInfo += `  Current Balance: $${product.currentBalance.toFixed(2)}\n`;
-          }
-          
-          customerInfo += `  Opened: ${product.openedDate}\n`;
-        });
-      } else {
-        customerInfo += "No products found.\n";
-      }
-      
-      // Recent transactions
-      customerInfo += "\nRECENT TRANSACTIONS:\n";
-      if (customer.recentTransactions && customer.recentTransactions.length > 0) {
-        customer.recentTransactions.slice(0, 5).forEach(transaction => {
-          customerInfo += `- ${transaction.date}: ${transaction.type} - $${Math.abs(transaction.amount).toFixed(2)} - ${transaction.description}\n`;
-        });
-      } else {
-        customerInfo += "No recent transactions found.\n";
-      }
-      
-      return customerInfo;
-    }).join("\n" + "=".repeat(50) + "\n\n");
-    
-    // Include database stats for comprehensive searches
-    let contextPrefix = "";
-    if (isComprehensiveSearch) {
-      // Add database statistics to context for comprehensive searches
-      contextPrefix = `DATABASE SUMMARY:
-- Total customers examined: ${searchResults.length}
-- This is a comprehensive database search result
-- The following customers match your query criteria\n\n`;
+    // For comprehensive searches, add a note about how many customers were actually found
+    let comprehensiveSearchNote = '';
+    if (searchWholeDatabase) {
+      comprehensiveSearchNote = `\n\nNote: This response is based on a comprehensive search of all ${customers.length} matching customers in the database.`;
     }
     
-    const context = contextPrefix + formattedCustomers;
+    // Step 2: Format customer information as context for the RAG system
+    let context = '';
     
-    // Generate a RAG response using context
-    const assistantResponse = await generateRagResponse(
-      userMessage, 
-      context,
-      isComprehensiveSearch  // Pass flag to inform the LLM this is a comprehensive search
-    );
+    if (customers.length > 0) {
+      context = customers.map(customer => {
+        // Format the products section with explicit count and detailed product information including balances
+        let productsSection = '';
+        if (customer.products && customer.products.length > 0) {
+          // Create a header for the products section
+          productsSection = `PRODUCTS (${customer.products.length}):\n`;
+          
+          // Add detailed information for each product including balance and other details
+          customer.products.forEach((product, index) => {
+            productsSection += `  ${index + 1}. ${product.type}`;
+            
+            // Add account/card number if available
+            if (product.accountNumber) {
+              productsSection += ` (${product.accountNumber})`;
+            } else if (product.cardNumber) {
+              productsSection += ` (${product.cardNumber})`;
+            } else if (product.loanNumber) {
+              productsSection += ` (${product.loanNumber})`;
+            }
+            
+            // Add balance information based on product type
+            if (product.balance !== undefined) {
+              productsSection += ` - Balance: $${product.balance.toFixed(2)}`;
+            } else if (product.currentBalance !== undefined) {
+              productsSection += ` - Current Balance: $${product.currentBalance.toFixed(2)}`;
+              if (product.creditLimit !== undefined) {
+                productsSection += `, Credit Limit: $${product.creditLimit.toFixed(2)}`;
+              }
+            } else if (product.outstandingBalance !== undefined) {
+              productsSection += ` - Outstanding Balance: $${product.outstandingBalance.toFixed(2)}`;
+              if (product.originalAmount !== undefined) {
+                productsSection += `, Original Amount: $${product.originalAmount.toFixed(2)}`;
+              }
+            }
+            
+            // Add interest rate if available
+            if (product.interestRate !== undefined) {
+              productsSection += `, Interest Rate: ${product.interestRate}%`;
+            }
+            
+            productsSection += '\n';
+          });
+        } else {
+          productsSection = `PRODUCTS (0): Customer has NO products`;
+        }
+        
+        // Format the transactions section clearly separated from products
+        let transactionsSection = '';
+        if (customer.recentTransactions && customer.recentTransactions.length > 0) {
+          transactionsSection = `RECENT TRANSACTIONS (${customer.recentTransactions.length}): ${customer.recentTransactions.map(t => `${t.date}: ${t.amount} for ${t.description}`).join("; ")}`;
+        } else {
+          transactionsSection = `RECENT TRANSACTIONS (0): No recent transactions`;
+        }
+        
+        return `--- Customer Information ---
+ID: ${customer.customerId}
+Name: ${customer.firstName} ${customer.lastName}
+Email: ${customer.email}
+Phone: ${customer.phoneNumber}
+Address: ${customer.address.street}, ${customer.address.city}, ${customer.address.state} ${customer.address.zipCode}
+${productsSection}${transactionsSection}
+Customer Rating: ${customer.customerRating || 'Not rated'}
+Join Date: ${customer.joinDate || 'Unknown'}
+Additional Notes: ${customer.notes || 'No additional notes'}
+`;
+      }).join('\n\n');
+    } else {
+      context = "No matching customer records found.";
+    }
     
-    // Calculate processing time
-    const processingTime = (Date.now() - startTime) / 1000; // Convert to seconds
+    // Step 3: Generate a response using the RAG approach with Ollama
+    const response = await generateRagResponse(query, context, searchWholeDatabase);
     
-    console.log(`Request processed in ${processingTime.toFixed(2)} seconds`);
+    // Step 4: Validate the response for common hallucinations about products
+    let validatedResponse = response;
     
-    // Return the assistant's response
+    // Add the comprehensive search note to the response if applicable
+    if (searchWholeDatabase && comprehensiveSearchNote) {
+      validatedResponse = validatedResponse + comprehensiveSearchNote;
+    }
+    
+    // Check for potential hallucinations about product counts
+    if (response.toLowerCase().includes('product') && customers.length > 0) {
+      // Examine each customer mentioned in the response
+      for (const customer of customers) {
+        const customerId = customer.customerId;
+        const customerName = `${customer.firstName} ${customer.lastName}`;
+        const productCount = customer.products.length;
+        
+        // Check for incorrect product counts
+        const incorrectPatterns = [
+          // For customers with no products
+          productCount === 0 && new RegExp(`${customerId}[^.]*?has [1-9][0-9]* products`, 'i'),
+          productCount === 0 && new RegExp(`${customerName}[^.]*?has [1-9][0-9]* products`, 'i'),
+          
+          // For customers with products
+          productCount > 0 && new RegExp(`${customerId}[^.]*?has 0 products`, 'i'),
+          productCount > 0 && new RegExp(`${customerName}[^.]*?has 0 products`, 'i'),
+          
+          // For customers with specific product counts
+          productCount > 0 && new RegExp(`${customerId}[^.]*?has [1-9][0-9]* products`, 'i')
+        ].filter(Boolean);
+        
+        const hasIncorrectInfo = incorrectPatterns.some(pattern => pattern && pattern.test(response));
+        
+        if (hasIncorrectInfo) {
+          console.log(`Detected potential hallucination about ${customerId} product count`);
+          
+          // Add a correction note to the response
+          const correction = `\n\nCORRECTION: Customer ${customerId} (${customerName}) has exactly ${productCount} products. Please note that products are different from transactions.`;
+          validatedResponse = response + correction;
+          break; // Stop after finding the first hallucination
+        }
+      }
+    }
+    
+    // Calculate the total processing time in milliseconds
+    const endTime = performance.now();
+    const processingTimeMs = Math.round(endTime - startTime);
+    
+    // Convert milliseconds to seconds with 2 decimal places
+    const processingTime = (processingTimeMs / 1000).toFixed(2);
+    
     return NextResponse.json({
-      role: "assistant",
-      content: assistantResponse,
-      processingTime: processingTime
+      response: validatedResponse,
+      matchedCustomers: customers.map(c => ({
+        id: c.customerId,
+        name: `${c.firstName} ${c.lastName}`,
+      })),
+      processingTime, // Processing time in seconds
     });
-    
   } catch (error) {
-    console.error("Error in chat route:", error);
+    console.error('Error in chat API:', error);
     return NextResponse.json(
-      { error: "Failed to process your request" },
+      { error: 'An error occurred while processing your request' },
       { status: 500 }
     );
   }

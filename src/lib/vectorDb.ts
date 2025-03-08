@@ -201,17 +201,20 @@ function cosineSimilarity(vecA: number[], vecB: number[]): number {
 }
 
 /**
- * Search for customers similar to the query
- * @param query The search query
- * @param limit Maximum number of results to return
- * @returns Array of matching customers
+ * Search for customers using vector similarity or direct ID lookup
+ * For comprehensive searches (high limit), use more efficient approach
  */
 export async function searchSimilarCustomers(query: string, limit: number = 3): Promise<Customer[]> {
-  console.log(`Searching for customers similar to: "${query}" with limit: ${limit}`);
   try {
-    // For more comprehensive searches, use a different approach
-    if (limit > 50) {
-      console.log("Performing comprehensive database search");
+    await initVectorDb();
+    
+    console.log(`Searching for customers similar to query: "${query}" with limit: ${limit}`);
+    
+    // For comprehensive searches (high limit), use a more efficient approach
+    const isComprehensiveSearch = limit > 50;
+    
+    if (isComprehensiveSearch) {
+      console.log("Performing comprehensive search of all customers");
       
       // Get all customers for direct analysis - more efficient for comprehensive searches
       const allCustomers = customerData as Customer[];
@@ -236,17 +239,6 @@ export async function searchSimilarCustomers(query: string, limit: number = 3): 
           b.productCount - a.productCount
         );
         
-        // Calculate product count distribution for logging
-        const zeroProducts = sortedCustomers.filter(c => c.productCount === 0).length;
-        const oneToThreeProducts = sortedCustomers.filter(c => c.productCount > 0 && c.productCount <= 3).length;
-        const fourPlusProducts = sortedCustomers.filter(c => c.productCount > 3).length;
-        
-        console.log(`Product count distribution: 
-          0 products: ${zeroProducts} customers
-          1-3 products: ${oneToThreeProducts} customers
-          4+ products: ${fourPlusProducts} customers`
-        );
-        
         // If query is about top N customers with most products
         if (listTopNMatch) {
           // Extract N from "top N" or default to 5
@@ -264,60 +256,46 @@ export async function searchSimilarCustomers(query: string, limit: number = 3): 
         
         // If query is about customers with more than X products
         if (query.toLowerCase().includes("more than") && query.toLowerCase().includes("product")) {
-          // Extract the number after "more than"
-          const moreThanMatch = query.match(/more than\s+(\d+)/i);
-          if (moreThanMatch && moreThanMatch[1]) {
-            const threshold = parseInt(moreThanMatch[1]);
-            console.log(`Query is asking for customers with more than ${threshold} products`);
-            
-            // Calculate how many customers exceed the threshold
-            const customersAboveThreshold = sortedCustomers.filter(c => c.productCount > threshold).length;
-            console.log(`Found ${customersAboveThreshold} customers with more than ${threshold} products`);
-            
-            // Get filtered customers
-            const filteredCustomers = sortedCustomers
-              .filter(c => c.productCount > threshold)
-              .map(c => c.customer);
-            
-            // If the query is combined with "list top N", we need to limit the results
-            // Parse for "list top N" or "top N" pattern
-            const listTopPattern = /list\s+top\s+(\d+)|top\s+(\d+)/i;
-            const listTopMatch = query.match(listTopPattern);
-            
-            if (listTopMatch) {
-              const topN = parseInt(listTopMatch[1] || listTopMatch[2] || "5");
-              console.log(`Combined query detected: returning top ${topN} customers with more than ${threshold} products`);
-              
-              // Return the top N customers with more than threshold products
-              return filteredCustomers.slice(0, topN);
-            }
-            
-            // If the query includes both "how many" and "list", we should return a reasonable number
-            // This handles the case of "how many customers have more than X products? list top N"
-            if (query.toLowerCase().includes("how many") && query.toLowerCase().includes("list")) {
-              const listMatch = query.match(/list\s+(\d+)|list\s+top\s+(\d+)/i);
-              const listN = listMatch ? parseInt(listMatch[1] || listMatch[2] || "5") : 5;
-              
-              console.log(`Query has both count and list components. Returning top ${listN} of ${filteredCustomers.length} matching customers`);
-              return filteredCustomers.slice(0, listN);
-            }
-            
-            return filteredCustomers.slice(0, limit);
+          // Extract the number from "more than X products"
+          const numberMatch = query.match(/more than (\d+)/i);
+          const threshold = numberMatch ? parseInt(numberMatch[1]) : 3; // Default to 3 if not specified
+          
+          console.log(`Filtering customers with more than ${threshold} products`);
+          const filteredCustomers = sortedCustomers
+            .filter(c => c.productCount > threshold)
+            .map(c => c.customer);
+          
+          // Log counts for all product ranges to help with debugging
+          const productCounts = {
+            "0 products": customersWithProductCount.filter(c => c.productCount === 0).length,
+            "1-3 products": customersWithProductCount.filter(c => c.productCount > 0 && c.productCount <= 3).length,
+            "4+ products": customersWithProductCount.filter(c => c.productCount > 3).length,
+            [`>${threshold} products`]: filteredCustomers.length
+          };
+          
+          console.log("Product count distribution:", productCounts);
+          console.log(`Found ${filteredCustomers.length} customers with more than ${threshold} products`);
+          
+          // If the query also asks for top customers, limit the results accordingly
+          if (query.toLowerCase().includes("top") || query.toLowerCase().includes("most")) {
+            const limitN = Math.min(filteredCustomers.length, limit);
+            console.log(`Limiting results to top ${limitN} customers by product count`);
+            return filteredCustomers.slice(0, limitN);
           }
+          
+          // Return the customers that match the criteria, up to the limit
+          return filteredCustomers.slice(0, limit);
         }
         
-        // For general product-related queries, return customers sorted by product count
-        const limitN = Math.min(sortedCustomers.length, limit);
-        console.log(`General product query: returning top ${limitN} customers by product count`);
-        return sortedCustomers.slice(0, limitN).map(c => c.customer);
+        // For other product-related queries, return top customers by product count
+        // This handles general questions about products
+        const topCount = Math.min(sortedCustomers.length, limit);
+        console.log(`Returning top ${topCount} customers by product count for general product query`);
+        return sortedCustomers.slice(0, topCount).map(c => c.customer);
       }
-      
-      // For queries not specifically about products
-      console.log(`Non-product specific query, returning up to ${limit} customers`);
-      return allCustomers.slice(0, limit);
     }
     
-    // For non-comprehensive searches, use the original vector search method
+    // Continue with the regular search logic for non-comprehensive searches
     // Check if the query contains a specific customer ID pattern (CUST-XXXXX)
     const customerIdMatch = query.match(/CUST-\d{5,6}/i);
     
@@ -401,8 +379,9 @@ export async function searchSimilarCustomers(query: string, limit: number = 3): 
     console.log(`Found ${customers.length} customers using vector search`);
     return customers;
   } catch (error) {
-    console.error("Error searching for similar customers:", error);
-    return [];
+    console.error("Error searching vector database:", error);
+    // Fall back to returning a few customers if the search fails
+    return (customerData as Customer[]).slice(0, limit);
   }
 }
 
