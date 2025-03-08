@@ -2,6 +2,8 @@
 
 A Retrieval Augmented Generation (RAG) chatbot for querying customer information using Ollama and SQLite for vector storage.
 
+[![GitHub Repository](https://img.shields.io/badge/GitHub-Repository-blue?logo=github)](https://github.com/ymdarum/customer-rag-chatbot)
+
 ## Features
 
 - 🤖 **RAG Implementation**: Uses Retrieval Augmented Generation with Ollama
