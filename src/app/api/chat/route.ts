@@ -68,11 +68,31 @@ export async function POST(request: NextRequest) {
     console.log(`Chat API received query: "${query}"`);
     
     // Analyze the query to determine if we should search the entire database
-    // Look for phrases indicating a comprehensive search request
-    const searchWholeDatabase = /search.*(whole|entire|all|complete|full).*database|all.*customers|every.*customer/i.test(query);
+    // Check for multiple patterns that would indicate a comprehensive search:
+    // 1. Explicit requests to search the entire database
+    // 2. Questions about counting or "how many" across all customers
+    // 3. Questions comparing customers based on criteria
+    const comprehensiveSearchPatterns = [
+      // Explicit requests for full database search
+      /search.*(whole|entire|all|complete|full).*database/i,
+      /(all|every).*customers?/i,
+      
+      // Count or statistics questions
+      /how many customers?/i,
+      /count.*customers?/i,
+      /number of customers?/i,
+      
+      // Questions about criteria across all customers
+      /customers?.*(with|having|more than)/i,
+      /which customers?/i,
+      /find.*customers?/i
+    ];
+    
+    // Check if any of the patterns match the query
+    const searchWholeDatabase = comprehensiveSearchPatterns.some(pattern => pattern.test(query));
     
     // Set the search limit based on the query analysis
-    // Use a high limit (effectively no limit) if the user wants to search the whole database
+    // Use a high limit (effectively no limit) if the comprehensive search is needed
     const searchLimit = searchWholeDatabase ? 1000 : 3;
     console.log(`Search mode: ${searchWholeDatabase ? 'comprehensive search' : 'limited search'} with limit: ${searchLimit}`);
     

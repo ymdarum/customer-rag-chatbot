@@ -215,15 +215,16 @@ export async function searchSimilarCustomers(query: string, limit: number = 3): 
     
     if (isComprehensiveSearch) {
       console.log("Performing comprehensive search of all customers");
-      // For comprehensive queries about products, scan the full database more efficiently
+      
+      // Get all customers for direct analysis - more efficient for comprehensive searches
+      const allCustomers = customerData as Customer[];
+      console.log(`Total customers in database: ${allCustomers.length}`);
+      
+      // Special handling for queries about product counts
       if (query.toLowerCase().includes("product")) {
-        // Get all customers and analyze their products directly
-        const allCustomers = customerData as Customer[];
+        console.log("Detected product-related query, analyzing product counts directly");
         
-        // Log the total customer count
-        console.log(`Analyzing all ${allCustomers.length} customers for product information`);
-        
-        // Filter customers based on product counts if that's what's being asked
+        // If query is about customers with more than X products
         if (query.toLowerCase().includes("more than") && query.toLowerCase().includes("product")) {
           // Extract the number from "more than X products"
           const numberMatch = query.match(/more than (\d+)/i);
@@ -234,11 +235,22 @@ export async function searchSimilarCustomers(query: string, limit: number = 3): 
             (c.products && c.products.length > threshold)
           );
           
+          // Log counts for all product ranges to help with debugging
+          const productCounts = {
+            "0 products": allCustomers.filter(c => !c.products || c.products.length === 0).length,
+            "1-3 products": allCustomers.filter(c => c.products && c.products.length > 0 && c.products.length <= 3).length,
+            "4+ products": allCustomers.filter(c => c.products && c.products.length > 3).length,
+            [`>${threshold} products`]: filteredCustomers.length
+          };
+          
+          console.log("Product count distribution:", productCounts);
           console.log(`Found ${filteredCustomers.length} customers with more than ${threshold} products`);
-          return filteredCustomers;
+          
+          // Return the customers that match the criteria, up to the limit
+          return filteredCustomers.slice(0, limit);
         }
         
-        // Return all customers for other product-related queries
+        // For other product-related queries, just return all customers
         return allCustomers.slice(0, limit);
       }
     }
