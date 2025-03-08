@@ -133,6 +133,10 @@ Use the following customer information to answer the user's question.
 Only use information provided in the context below. If you don't know 
 the answer based on the provided context, say so politely.
 
+When counting products, be accurate and count the actual number of products listed.
+If a customer has no products, their "Products:" field will be empty.
+Be precise when reporting numbers and facts about customers.
+
 Customer information:
 ${context}`;
 

@@ -210,6 +210,26 @@ export async function searchSimilarCustomers(query: string, limit: number = 3): 
     
     console.log(`Searching for customers similar to query: "${query}"`);
     
+    // Check if the query contains a specific customer ID pattern (CUST-XXXXX)
+    const customerIdMatch = query.match(/CUST-\d{5,6}/i);
+    
+    // If a customer ID is explicitly mentioned, prioritize exact matches
+    if (customerIdMatch) {
+      const customerId = customerIdMatch[0].toUpperCase();
+      console.log(`Detected specific customer ID in query: ${customerId}`);
+      
+      // First try to find the exact customer in the database
+      const exactCustomer = (customerData as Customer[]).find(c => 
+        c.customerId.toUpperCase() === customerId
+      );
+      
+      if (exactCustomer) {
+        console.log(`Found exact match for customer ID: ${customerId}`);
+        return [exactCustomer];
+      }
+    }
+    
+    // Continue with vector search if no exact match was found
     // Get embedding for the query
     const queryEmbedding = await getEmbedding(query);
     
