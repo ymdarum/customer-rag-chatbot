@@ -76,14 +76,30 @@ export async function POST(request: NextRequest) {
     
     if (customers.length > 0) {
       context = customers.map(customer => {
+        // Format the products section with explicit count and clear formatting
+        let productsSection = '';
+        if (customer.products && customer.products.length > 0) {
+          productsSection = `PRODUCTS (${customer.products.length}): ${customer.products.map(p => p.type).join(", ")}`;
+        } else {
+          productsSection = `PRODUCTS (0): Customer has NO products`;
+        }
+        
+        // Format the transactions section clearly separated from products
+        let transactionsSection = '';
+        if (customer.recentTransactions && customer.recentTransactions.length > 0) {
+          transactionsSection = `RECENT TRANSACTIONS (${customer.recentTransactions.length}): ${customer.recentTransactions.map(t => `${t.date}: ${t.amount} for ${t.description}`).join("; ")}`;
+        } else {
+          transactionsSection = `RECENT TRANSACTIONS (0): No recent transactions`;
+        }
+        
         return `--- Customer Information ---
 ID: ${customer.customerId}
 Name: ${customer.firstName} ${customer.lastName}
 Email: ${customer.email}
 Phone: ${customer.phoneNumber}
 Address: ${customer.address.street}, ${customer.address.city}, ${customer.address.state} ${customer.address.zipCode}
-Products: ${customer.products.map(p => p.type).join(", ")}
-Transactions: ${customer.recentTransactions.map(t => `${t.date}: ${t.amount} for ${t.description}`).join("; ")}
+${productsSection}
+${transactionsSection}
 Customer Rating: ${customer.customerRating || 'Not rated'}
 Join Date: ${customer.joinDate || 'Unknown'}
 Additional Notes: ${customer.notes || 'No additional notes'}
@@ -96,6 +112,44 @@ Additional Notes: ${customer.notes || 'No additional notes'}
     // Step 3: Generate a response using the RAG approach with Ollama
     const response = await generateRagResponse(query, context);
     
+    // Step 4: Validate the response for common hallucinations about products
+    let validatedResponse = response;
+    
+    // Check for potential hallucinations about product counts
+    if (response.toLowerCase().includes('product') && customers.length > 0) {
+      // Examine each customer mentioned in the response
+      for (const customer of customers) {
+        const customerId = customer.customerId;
+        const customerName = `${customer.firstName} ${customer.lastName}`;
+        const productCount = customer.products.length;
+        
+        // Check for incorrect product counts
+        const incorrectPatterns = [
+          // For customers with no products
+          productCount === 0 && new RegExp(`${customerId}[^.]*?has [1-9][0-9]* products`, 'i'),
+          productCount === 0 && new RegExp(`${customerName}[^.]*?has [1-9][0-9]* products`, 'i'),
+          
+          // For customers with products
+          productCount > 0 && new RegExp(`${customerId}[^.]*?has 0 products`, 'i'),
+          productCount > 0 && new RegExp(`${customerName}[^.]*?has 0 products`, 'i'),
+          
+          // For customers with specific product counts
+          productCount > 0 && new RegExp(`${customerId}[^.]*?has [1-9][0-9]* products`, 'i')
+        ].filter(Boolean);
+        
+        const hasIncorrectInfo = incorrectPatterns.some(pattern => pattern && pattern.test(response));
+        
+        if (hasIncorrectInfo) {
+          console.log(`Detected potential hallucination about ${customerId} product count`);
+          
+          // Add a correction note to the response
+          const correction = `\n\nCORRECTION: Customer ${customerId} (${customerName}) has exactly ${productCount} products. Please note that products are different from transactions.`;
+          validatedResponse = response + correction;
+          break; // Stop after finding the first hallucination
+        }
+      }
+    }
+    
     // Calculate the total processing time in milliseconds
     const endTime = performance.now();
     const processingTimeMs = Math.round(endTime - startTime);
@@ -104,7 +158,7 @@ Additional Notes: ${customer.notes || 'No additional notes'}
     const processingTime = (processingTimeMs / 1000).toFixed(2);
     
     return NextResponse.json({
-      response,
+      response: validatedResponse,
       matchedCustomers: customers.map(c => ({
         id: c.customerId,
         name: `${c.firstName} ${c.lastName}`,

@@ -134,12 +134,16 @@ Only use information provided in the context below. If you don't know
 the answer based on the provided context, say so politely.
 
 IMPORTANT INSTRUCTIONS FOR PRODUCT INFORMATION:
-1. Be extremely precise when counting products for each customer.
-2. A customer with "products": [] has ZERO products, not any other number.
-3. Do not confuse transactions with products - they are different.
-4. Never make up or hallucinate product information.
-5. If you're unsure about the number of products, explicitly state what you see in the data.
-6. Double-check your counts before providing an answer.
+1. The customer data contains two COMPLETELY SEPARATE sections:
+   - "PRODUCTS (X)" section lists the actual products a customer has purchased
+   - "RECENT TRANSACTIONS (X)" section lists the customer's recent financial transactions
+2. These are DIFFERENT pieces of information and should NEVER be confused:
+   - When counting products, ONLY use the data from the "PRODUCTS (X)" section
+   - Transactions are NOT products
+3. If the section shows "PRODUCTS (0): Customer has NO products", then the customer has ZERO products
+4. Never make up or hallucinate product information
+5. Double-check your counts before providing an answer
+6. If a question asks about "products", only consider the PRODUCTS section, not transactions
 
 Customer information:
 ${context}`;
@@ -151,7 +155,7 @@ ${context}`;
 
   try {
     return await getChatResponse(messages, {
-      temperature: 0.3, // Lower temperature for more factual responses
+      temperature: 0.2, // Even lower temperature for more factual responses
     });
   } catch (error) {
     console.error("RAG response error:", error);
